@@ -136,3 +136,96 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now flask.service
+
+
+
+Step 5 — Create the Managed Instance Group (MIG)
+Compute Engine → Instance groups → Create instance group
+Name: mig-flask-app
+Location: Single zone (e.g., asia-south1-a)
+Instance template: tmpl-flask-app
+Autoscaling: Min 2, Max 4 (demo)
+Create.
+Verification (optional, via a bastion in subnet-public): you can SSH to a bastion with an external IP, then SSH to private instances using internal IP, and curl http://:8080/health
+
+Step 6 — Create the Regional External HTTP(S) Load Balancer
+Network services → Load balancing → Create load balancer
+
+Choose: Application Load Balancer
+From Internet to my VMs or serverless services → Start configuration
+Load balancer scope: Regional
+Region: your chosen region
+Continue.
+Frontend (HTTP for now)
+
+Protocol: HTTP
+Port: 80
+IP address: Create or select a new External IPv4 (e.g., flask-ip)
+VPC network for forwarding rule: prod-vpc
+Save.
+Backend
+
+Backend type: Instance group
+Instance group: mig-flask-app
+Port: 8080
+Health check: Create new → HTTP on port 8080 → Request path /health
+Save.
+Routing
+
+Default URL map → points to the backend above
+Proxy-only subnet
+
+Ensure your Regional LB references your proxy-only subnet in the same region/VPC (we created it in Step 1).
+Review & Create
+
+After provisioning, open the frontend IP in a browser:
+You should see: Hello from Flask on GCP (private subnet)!
+Step 7 — Domain setup (GoDaddy high-level) + Cloud DNS records
+High-level in GoDaddy:
+
+Buy or use an existing domain (e.g., example.in)
+In the domain’s DNS/Nameservers panel, choose “Custom nameservers”
+You will set these to the 4 nameservers that Google gives you in Cloud DNS (next steps)
+Create a Cloud DNS public zone:
+
+Network services → Cloud DNS → Create zone
+Zone type: Public
+Zone name: example-in-zone (any friendly name)
+DNS name: example.in.
+Create.
+Copy the 4 nameservers (ns-cloud-*.googledomains.com).
+Add records in Cloud DNS (after the LB is ready and has an external IP):
+
+Add an A record at the apex:
+
+Add standard → Type: A
+Name: (leave blank or use @)
+TTL: 300
+IPv4 address:
+Save.
+Optional CNAME for www:
+
+Type: CNAME
+Name: www
+Canonical name: example.in.
+TTL: 300
+Save.
+Delegate the domain to Google in GoDaddy:
+
+In GoDaddy → Nameservers → set to the 4 Cloud DNS nameservers you copied
+Save. Propagation can take some time (usually minutes, sometimes longer)
+Step 8 — Validate
+By IP (before DNS):
+
+Open http://<LB_IP>/
+Open http://<LB_IP>/health → should return ok
+By domain (after delegation + A record):
+
+Open http://example.in/
+Open http://example.in/health → should return ok
+Optional terminal checks (any machine with dig/curl):
+
+dig A example.in +short
+dig NS example.in +short
+curl -i http://example.in/
+
